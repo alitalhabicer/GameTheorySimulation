@@ -408,7 +408,7 @@ namespace OyunTeorisi
                     _population[i].Count = 0;
                 }
             }
-
+            Console.Clear();
             if (total == 0)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
@@ -417,6 +417,7 @@ namespace OyunTeorisi
                 _population[0].Count = 10; // Kopyacı
                 _population[2].Count = 10; // Sinsi
             }
+
         }
 
         // Turnuva Mantığı: Her karakter tipi diğer tüm tiplerle karşılaşır
