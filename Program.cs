@@ -348,7 +348,7 @@ namespace OyunTeorisi
             // Simülasyon döngüsü
             while (_population.Count(c => c.Count > 0) > 1 && generation <= 100) // Tek tip kalana kadar veya 100 jenerasyon
             {
-                Console.Clear();
+                
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"\n================== JENERASYON {generation} (POPÜLASYON: {totalPopulation}) ==================");
                 Console.ResetColor();
@@ -521,6 +521,7 @@ namespace OyunTeorisi
             var losers = evolvedTypes.Skip(topCount).ToList();
 
             int totalPopulation = _population.Sum(c => c.Count); // Önceki toplam popülasyon
+            Console.Clear(); 
 
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine("\n--- ELENENLER (LOSERS) ---");
@@ -574,7 +575,7 @@ namespace OyunTeorisi
         public static void ShowPopulationState(int generation)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"\n--- JENERASYON {generation} SONU POPÜLASYON DAĞILIMI ---");
+            Console.WriteLine($"\n--- JENERASYON {generation} SONU POPÜLASYON DAĞILIMI ---");         
             Console.ResetColor();
 
             Console.WriteLine("ID\tKARAKTER\t\tADET\tTOPLAM SKOR\tORT. SKOR");
