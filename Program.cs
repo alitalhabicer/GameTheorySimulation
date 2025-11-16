@@ -4,16 +4,32 @@ using System.Linq;
 
 namespace OyunTeorisi
 {
+    // Karakter Stratejilerini temsil eden temsilci (delegate)
+    // NOT: Delegate tanımı namespace seviyesine taşındı.
+    public delegate bool StrategyFunc(bool[] ownHistory, bool[] oppHistory, int i, bool isGrimTriggered, bool isOppGrimTriggered);
+
+    // Turnuva boyunca bir karakter tipinin durumunu tutar
+    public class KarakterDurumu
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public int Count { get; set; } = 0; // Popülasyondaki bu tipten kaç tane var
+        public long TotalScore { get; set; } = 0; // Popülasyondaki bu tipin toplam skoru
+        public StrategyFunc Strategy { get; set; }
+    }
+
     public class Program
     {
         // Global ve özel (private) değişkenler
-        private static int _scoreA = 0;
-        private static int _scoreB = 0;
         private static Random _rnd = new Random();
 
-        // Hain Hafıza stratejisi için durum takibi
+        // Hain Hafıza stratejisi için durum takibi (Turnuva boyunca her maçta sıfırlanacak)
+        // NOT: Bu değişkenler, her maç yeniden başladığında PlayMatch içinde sıfırlanır.
         private static bool _grimTriggerA = false;
         private static bool _grimTriggerB = false;
+
+        private static List<KarakterDurumu> _population = new List<KarakterDurumu>();
+        private const int TUR_SAYISI = 100; // Her bir ikili maçtaki tur sayısı
 
         // Karakter adlarını kolayca bulmak için
         private static readonly string[] CharacterNames = {
@@ -24,7 +40,7 @@ namespace OyunTeorisi
         public static void Main()
         {
             Console.Clear();
-            Console.Title = "Oyun Teorisi Simülasyonu: Tekrarlı Mahkum İkilemi";
+            Console.Title = "Oyun Teorisi Simülasyonu: EVRİMSEL TURNUVA";
 
             OyunAmaciniYazdir();
             Console.WriteLine("\n" + new string('=', 80) + "\n");
@@ -34,10 +50,8 @@ namespace OyunTeorisi
 
             Console.WriteLine("\nDevam etmek için bir tuşa basın...");
             Console.ReadKey();
-            Console.Clear();
 
-            // Ana akışı başlat
-            CharSelect();
+            RunSimulation();
         }
 
         #region EKRAN VE BILGI METOTLARI
@@ -45,14 +59,14 @@ namespace OyunTeorisi
         public static void OyunAmaciniYazdir()
         {
             Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("--- OYUN TEORİSİ SİMÜLASYONU: TEKRARLI MAHKUM İKİLEMİ ---\n");
+            Console.WriteLine("--- OYUN TEORİSİ SİMÜLASYONU: EVRİMSEL TURNUVA ---\n");
             Console.ResetColor();
 
             Console.WriteLine("Oyunun Amacı:");
-            Console.WriteLine("\tBu oyun, iki rasyonel oyuncunun (karakterin) stratejik etkileşimini inceler.");
-            Console.WriteLine("\tHer turda, her oyuncu İşbirliği (True / C) veya İhanet (False / D) kararı verir.");
+            Console.WriteLine("\tBu simülasyon, karakter popülasyonunun jenerasyonlar içinde nasıl değiştiğini inceler.");
+            Console.WriteLine("\tHer Jenerasyonda, tüm karakter tipleri birbirleriyle {0} tur maç yapar.", TUR_SAYISI);
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("\n\tKazanan, oyun sonunda en yüksek toplam puanı (kazancı) elde eden karakterdir.");
+            Console.WriteLine("\n\tEVRİM KURALI: Her jenerasyon sonunda en düşük puanlı karakterler, en başarılı (yüksek puanlı) karakterlerin kopyalarıyla değiştirilir.");
             Console.ResetColor();
         }
 
@@ -111,136 +125,283 @@ namespace OyunTeorisi
             Console.WriteLine("7.\tSömürücü\t\tBaşlangıç False. Rakip nazikse False devam eder, misilleme gelirse Kopyacı'ya döner.");
             Console.WriteLine("8.\tFırsatçı\t\tKopyacı stratejisi uygular ama arada bir (düşük ihtimalle) sürpriz False yapar.");
             Console.WriteLine("9.\tGrupçu\t\t\tBaşlangıç True. Sonraki hamleleri, geçmiş tüm hamlelerin **çoğunluğuna** göre belirler.");
-            Console.WriteLine("10.\tİntikamcı\t\tKazandıysa aynı eylemi tekrar eder, kaybettiyse değiştirir (Pavlov).");
+            Console.WriteLine("10.\tİntikamcı\t\tKazandıysa aynı eylemi tekrarlar, kaybettiyse değiştirir (Pavlov).");
         }
 
         #endregion
 
-        #region KULLANICI SEÇİM VE KONTROL METOTLARI
+        #region EVRIM SIMÜLASYONU VE ANA AKIŞ METOTLARI
 
-        public static int ReadCharacterSelection(string prompt)
-        {
-            while (true)
-            {
-                Console.WriteLine(prompt);
-                string input = Console.ReadLine();
-                if (int.TryParse(input, out int selection) && selection >= 1 && selection <= 10)
-                {
-                    return selection;
-                }
-                else if (input == "0")
-                {
-                    Console.Clear();
-                    KarakterAciklamalariniGoster();
-                }
-                else
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("Hatalı seçim. Lütfen 1 ile 10 arasında bir sayı girin veya bilgi için 0'a basın.");
-                    Console.ResetColor();
-                }
-            }
-        }
-
-        public static void CharSelect()
+        public static void RunSimulation()
         {
             Console.Clear();
             KarakterAciklamalariniGoster();
-            Console.WriteLine("\n" + new string('-', 60));
 
-            int select1 = ReadCharacterSelection("Karakter A'yı seçin (1-10):");
-            int select2 = ReadCharacterSelection("Karakter B'yi seçin (1-10):");
+            // Popülasyonu başlat
+            InitialPopulationSetup();
 
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine($"\nSeçimleriniz: A: {select1} ({CharacterNames[select1 - 1]}) vs B: {select2} ({CharacterNames[select2 - 1]})");
-            Console.ResetColor();
+            int generation = 1;
+            int totalPopulation = _population.Sum(c => c.Count);
 
-            Console.WriteLine("Eğer yanlış karakter seçtiyseniz 0'a basın, devam etmek için herhangi bir tuşa basın.");
-            string Iptal = Console.ReadLine();
-            if (Iptal == "0")
+            // Simülasyon döngüsü
+            while (_population.Count(c => c.Count > 0) > 1 && generation <= 100) // Tek tip kalana kadar veya 100 jenerasyon
             {
-                CharSelect();
-                return; // Özyinelemeli çağrıdan sonra geri dön
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n================== JENERASYON {generation} (POPÜLASYON: {totalPopulation}) ==================");
+                Console.ResetColor();
+                ShowPopulationState(generation);
+
+                Console.WriteLine("\nTurnuva Başlıyor... Tüm tipler birbiriyle {0} tur oynayacak.", TUR_SAYISI);
+                Console.WriteLine("Devam etmek için bir tuşa basın.");
+                Console.ReadKey();
+
+                // 1. Turnuvayı Koştur ve Puanları Topla
+                RunTournament();
+
+                // 2. Popülasyonu Evrimleştir
+                EvolvePopulation();
+
+                generation++;
             }
 
-            Game(select1, select2);
+            Console.Clear();
+            ShowPopulationState(generation);
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.WriteLine("\n================== EVRİM SONA ERDİ ==================");
+            Console.WriteLine("Popülasyon Dengeye Ulaştı veya Maksimum Jenerasyona Gelindi.");
+            Console.ResetColor();
+            Console.WriteLine("\nBitirmek için bir tuşa basın...");
+            Console.ReadKey();
         }
 
-        public static void Game(int select1, int select2)
+        // Kullanıcıdan başlangıç popülasyonunu alan metot
+        public static void InitialPopulationSetup()
         {
-            Console.Clear();
-            Console.WriteLine($"--- MAÇ BAŞLANGICI: {CharacterNames[select1 - 1]} vs {CharacterNames[select2 - 1]} ---");
-            Console.WriteLine("Oyun sayısını (tur sayısını) seçin (Min 1, Örn: 100):");
-            string oyunSayisiStr = Console.ReadLine();
-
-            if (!int.TryParse(oyunSayisiStr, out int sayisalDeger) || sayisalDeger <= 0)
+            _population.Clear();
+            for (int i = 0; i < CharacterNames.Length; i++)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Hatalı giriş. Lütfen 0'dan büyük bir sayı girin.");
-                Console.ResetColor();
-                // Hatalı girişte tekrar seçim ekranına dön
-                Game(select1, select2);
-                return;
+                _population.Add(new KarakterDurumu { Id = i + 1, Name = CharacterNames[i], Strategy = GetStrategyFunc(i + 1) });
             }
 
-            // Skorları ve durumları sıfırla
-            _scoreA = 0;
-            _scoreB = 0;
+            Console.WriteLine("\n" + new string('-', 60));
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"Lütfen her karakter tipinden kaç tane olacağını girin (Toplam {CharacterNames.Length} tip var).");
+            Console.WriteLine("Boş bırakılanlar 0 kabul edilecektir.");
+            Console.ResetColor();
+
+            int total = 0;
+            for (int i = 0; i < _population.Count; i++)
+            {
+                Console.Write($"({i + 1}) {CharacterNames[i]} adedi: ");
+                string input = Console.ReadLine();
+                if (int.TryParse(input, out int count) && count >= 0)
+                {
+                    _population[i].Count = count;
+                    total += count;
+                }
+                else
+                {
+                    _population[i].Count = 0;
+                }
+            }
+
+            if (total == 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Popülasyon sıfır olamaz. Varsayılan olarak 10 Kopyacı ve 10 Sinsi ile başlatılıyor.");
+                Console.ResetColor();
+                _population[0].Count = 10; // Kopyacı
+                _population[2].Count = 10; // Sinsi
+            }
+        }
+
+        // Turnuva Mantığı: Her karakter tipi diğer tüm tiplerle karşılaşır
+        public static void RunTournament()
+        {
+            // Puanları sıfırla
+            _population.ForEach(c => c.TotalScore = 0);
+
+            var activeTypes = _population.Where(c => c.Count > 0).ToList();
+
+            // Round-Robin Turnuvası: Her tip diğer her tiple oynar (kendiyle dahil)
+            for (int i = 0; i < activeTypes.Count; i++)
+            {
+                for (int j = 0; j < activeTypes.Count; j++)
+                {
+                    KarakterDurumu typeA = activeTypes[i];
+                    KarakterDurumu typeB = activeTypes[j];
+
+                    // Kopyacı vs Sinsi (typeA vs typeB)
+                    // Tüm maçlar aynı Tur Sayısı (TUR_SAYISI) ile oynanır.
+
+                    int scoreA, scoreB;
+                    PlayMatch(typeA, typeB, out scoreA, out scoreB);
+
+                    // Ağırlıklı Puan Ekleme:
+                    // A'nın puanı, B'nin popülasyon büyüklüğü ile çarpılır.
+                    typeA.TotalScore += (long)scoreA * typeB.Count;
+
+                    // B'nin puanı, A'nın popülasyon büyüklüğü ile çarpılır.
+                    typeB.TotalScore += (long)scoreB * typeA.Count;
+                }
+            }
+        }
+
+        // İki karakter tipi arasındaki tek bir maçı simüle eder (TUR_SAYISI kez)
+        public static void PlayMatch(KarakterDurumu typeA, KarakterDurumu typeB, out int finalScoreA, out int finalScoreB)
+        {
+            // Maç için skor ve hafıza sıfırlama
+            int matchScoreA = 0;
+            int matchScoreB = 0;
+
+            // Hain Hafıza durumları sıfırlanır
             _grimTriggerA = false;
             _grimTriggerB = false;
 
-            // Dizileri tanımla ve başlat
-            bool[] strategyA = new bool[sayisalDeger];
-            bool[] strategyB = new bool[sayisalDeger];
+            // Maç hamle hafızaları
+            bool[] historyA = new bool[TUR_SAYISI];
+            bool[] historyB = new bool[TUR_SAYISI];
 
-            Vs(select1, select2, strategyA, strategyB);
+            for (int i = 0; i < TUR_SAYISI; i++)
+            {
+                // Hamleleri Hesapla
+                // Bu kısım, KarakterDurumu'nun Strategy delegate'ini doğru şekilde çağırır.
+                bool moveA = typeA.Strategy(historyA, historyB, i, _grimTriggerA, _grimTriggerB);
+                bool moveB = typeB.Strategy(historyB, historyA, i, _grimTriggerB, _grimTriggerA);
+
+                historyA[i] = moveA;
+                historyB[i] = moveB;
+
+                // Hain Hafıza Durumunu Güncelle
+                if (typeA.Id == 4 && moveB == false) _grimTriggerA = true;
+                if (typeB.Id == 4 && moveA == false) _grimTriggerB = true;
+
+                // Puanı Hesapla
+                int scoreDeltaA, scoreDeltaB;
+                CalculatePayoff(moveA, moveB, out scoreDeltaA, out scoreDeltaB);
+                matchScoreA += scoreDeltaA;
+                matchScoreB += scoreDeltaB;
+            }
+
+            finalScoreA = matchScoreA;
+            finalScoreB = matchScoreB;
+        }
+
+        // Popülasyon Evrimi Mantığı (En düşük 5 tipin yerine en yüksek 5 tip gelir)
+        public static void EvolvePopulation()
+        {
+            // Sadece yaşayan karakter tiplerini al
+            var scoringTypes = _population.Where(c => c.Count > 0).ToList();
+
+            if (!scoringTypes.Any()) return;
+
+            // Ortalama puanı hesapla
+            // NOT: Ortalama skor, toplam skorun (KarakterSayısı * TurSayısı * RakipSayısı) toplam puana bölünmesiyle hesaplanır.
+            int totalActiveCount = scoringTypes.Sum(c => c.Count);
+
+            var evolvedTypes = scoringTypes
+                .Select(c => new
+                {
+                    Karakter = c,
+                    AverageScore = (c.TotalScore > 0 && c.Count > 0 && totalActiveCount > 0)
+                        ? (double)c.TotalScore / (c.Count * totalActiveCount)
+                        : 0.0
+                })
+                .OrderByDescending(x => x.AverageScore)
+                .ToList();
+
+            // En düşük 5 (Kaybeden) ve En yüksek 5 (Kazanan) tipi bul
+            int topCount = evolvedTypes.Count / 2;
+            if (evolvedTypes.Count % 2 != 0) topCount++;
+
+            var winners = evolvedTypes.Take(topCount).ToList();
+            var losers = evolvedTypes.Skip(topCount).ToList();
+
+            int totalPopulation = _population.Sum(c => c.Count); // Önceki toplam popülasyon
+
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("\n--- ELENENLER (LOSERS) ---");
+            Console.ResetColor();
+
+            // 1. Kaybedenleri Elimize Al
+            int totalLoserCount = losers.Sum(l => l.Karakter.Count);
+            foreach (var loser in losers)
+            {
+                Console.WriteLine($"\tELENDİ: {loser.Karakter.Name} ({loser.Karakter.Count} adet). Ortalama Skor: {loser.AverageScore:F2}");
+                // Kaybedenin popülasyonunu sıfırla
+                _population.First(c => c.Id == loser.Karakter.Id).Count = 0;
+            }
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("\n--- ÇOĞALANLAR (WINNERS) ---");
+            Console.ResetColor();
+
+            // 2. Kazananların Popülasyonunu Artır (Kaybedenlerin yerlerini kazananların ortalama skor oranına göre paylaştır)
+            double totalWinnerAverageScore = winners.Sum(w => w.AverageScore);
+
+            foreach (var winner in winners)
+            {
+                // Kazanılan yeni yer sayısını belirle (Kaybedenlerin toplam yeri üzerinden)
+                double scoreRatio = (totalWinnerAverageScore > 0) ? (winner.AverageScore / totalWinnerAverageScore) : 0;
+                int newCount = (int)Math.Round(scoreRatio * totalLoserCount);
+
+                KarakterDurumu currentWinner = _population.First(c => c.Id == winner.Karakter.Id);
+                currentWinner.Count += newCount;
+
+                // Popülasyon detaylarını yazdır
+                Console.WriteLine($"\tÇOĞALDI: {currentWinner.Name} ({currentWinner.Count} adet). Ortalama Skor: {winner.AverageScore:F2}");
+            }
+
+            // Toplam Popülasyonun Korunduğunu Garanti Etmek için Son Kontrol
+            int newTotal = _population.Sum(c => c.Count);
+
+            // Yuvarlamadan kaynaklanan farkı en büyük kazanana ekle (basitleştirme)
+            if (newTotal != totalPopulation)
+            {
+                // Mevcut popülasyonda en yüksek puana sahip olan değil, en yüksek ortalama puana sahip olanı bularak farkı ona ekle
+                var topWinner = _population.FirstOrDefault(c => c.Id == winners.First().Karakter.Id);
+                if (topWinner != null)
+                {
+                    topWinner.Count += (totalPopulation - newTotal);
+                }
+            }
+        }
+
+        // Popülasyonun anlık durumunu gösterir
+        public static void ShowPopulationState(int generation)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"\n--- JENERASYON {generation} SONU POPÜLASYON DAĞILIMI ---");
+            Console.ResetColor();
+
+            Console.WriteLine("ID\tKARAKTER\t\tADET\tTOPLAM SKOR\tORT. SKOR");
+            Console.WriteLine(new string('-', 60));
+
+            var activeTypes = _population.Where(c => c.Count > 0).ToList();
+            int totalCount = activeTypes.Sum(c => c.Count);
+
+            foreach (var type in activeTypes.OrderByDescending(c => (double)c.TotalScore / (c.Count * totalCount)))
+            {
+                // Ortalama Skor Hesaplama
+                double averageScore = (type.Count > 0 && totalCount > 0)
+                    ? (double)type.TotalScore / (type.Count * totalCount)
+                    : 0.0;
+
+                Console.WriteLine($"{type.Id}\t{type.Name.PadRight(15)}\t{type.Count}\t{type.TotalScore}\t\t{averageScore:F2}");
+            }
+
+            if (activeTypes.Count == 1)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\nEVRİMSEL KAZANAN: {activeTypes.First().Name} ({activeTypes.First().Count} adet)!");
+                Console.ResetColor();
+            }
         }
 
         #endregion
 
         #region STRATEJI VE PUANLAMA METOTLARI
-
-        // Hamleyi çalıştıran ana işlevi tanımlar.
-        private delegate bool StrategyFunc(bool[] ownHistory, bool[] oppHistory, int i, bool isGrimTriggered, bool isOppGrimTriggered);
-
-        // VS döngüsü
-        public static void Vs(int select1, int select2, bool[] strategyA, bool[] strategyB)
-        {
-            // Karakter fonksiyonlarını eşleştirme (Func<kendi geçmişi, rakip geçmişi, tur, kendi trigger durumu, rakip trigger durumu>)
-            StrategyFunc strategyFuncA = GetStrategyFunc(select1);
-            StrategyFunc strategyFuncB = GetStrategyFunc(select2);
-
-            Console.WriteLine("\n--- OYUN BAŞLIYOR ---\n");
-            Console.WriteLine("TUR\tHAMLE A\t\tHAMLE B\t\tSKOR A\tSKOR B");
-            Console.WriteLine(new string('-', 60));
-
-            for (int i = 0; i < strategyA.Length; i++)
-            {
-                // 1. Hamleleri Hesapla (Grim Trigger durumunu kontrol et)
-                // strategyA'nın hamlesini strategyB'nin geçmişine göre hesapla
-                strategyA[i] = strategyFuncA(strategyA, strategyB, i, _grimTriggerA, _grimTriggerB);
-
-                // strategyB'nin hamlesini strategyA'nın geçmişine göre hesapla
-                strategyB[i] = strategyFuncB(strategyB, strategyA, i, _grimTriggerB, _grimTriggerA);
-
-                // 2. Hain Hafıza Durumunu Güncelle (Eğer rakip ihanet ettiyse kendi trigger'ını aç)
-                if (select1 == 4 && strategyB[i] == false) _grimTriggerA = true;
-                if (select2 == 4 && strategyA[i] == false) _grimTriggerB = true;
-
-                // 3. Puanı Hesapla ve Güncelle
-                int scoreDeltaA, scoreDeltaB;
-                CalculatePayoff(strategyA[i], strategyB[i], out scoreDeltaA, out scoreDeltaB);
-                _scoreA += scoreDeltaA;
-                _scoreB += scoreDeltaB;
-
-                // 4. Çıktıyı Yazdır (Renkli)
-                WriteTurnOutput(i + 1, strategyA[i], strategyB[i], _scoreA, _scoreB, scoreDeltaA, scoreDeltaB);
-            }
-
-            Console.WriteLine(new string('=', 60));
-            ShowFinalResult();
-        }
-
         // Puan hesaplama matrisi
         private static void CalculatePayoff(bool hamleA, bool hamleB, out int scoreA, out int scoreB)
         {
@@ -263,72 +424,6 @@ namespace OyunTeorisi
             }
         }
 
-        // Tur çıktısını renklendirerek yazdırır
-        private static void WriteTurnOutput(int turn, bool moveA, bool moveB, int totalA, int totalB, int deltaA, int deltaB)
-        {
-            // Tur numarası
-            Console.Write($"{turn}\t");
-
-            // Hamle A
-            Console.ForegroundColor = moveA ? ConsoleColor.DarkGreen : ConsoleColor.Red;
-            Console.Write(moveA ? "TRUE (C)" : "FALSE (D)");
-            Console.ResetColor();
-
-            Console.Write("\t");
-
-            // Hamle B
-            Console.ForegroundColor = moveB ? ConsoleColor.DarkGreen : ConsoleColor.Red;
-            Console.Write(moveB ? "TRUE (C)" : "FALSE (D)");
-            Console.ResetColor();
-
-            // Skor A
-            Console.Write($"\t{totalA} ({FormatDelta(deltaA)})");
-
-            // Skor B
-            Console.Write($"\t{totalB} ({FormatDelta(deltaB)})");
-
-            Console.WriteLine();
-        }
-
-        private static string FormatDelta(int delta)
-        {
-            if (delta > 0) return $"+{delta}";
-            return $"{delta}";
-        }
-
-        // Nihai sonucu gösterir
-        private static void ShowFinalResult()
-        {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("\n--- OYUN SONUÇLARI ---");
-            Console.WriteLine($"Toplam Skor A ({CharacterNames[GetIndex(1)]}): {_scoreA}");
-            Console.WriteLine($"Toplam Skor B ({CharacterNames[GetIndex(2)]}): {_scoreB}");
-            Console.ResetColor();
-
-            Console.ForegroundColor = ConsoleColor.Magenta;
-            if (_scoreA > _scoreB)
-            {
-                Console.WriteLine($"\nGENEL KAZANAN: {CharacterNames[GetIndex(1)]}!");
-            }
-            else if (_scoreB > _scoreA)
-            {
-                Console.WriteLine($"\nGENEL KAZANAN: {CharacterNames[GetIndex(2)]}!");
-            }
-            else
-            {
-                Console.WriteLine("\nSONUÇ: BERABERLİK!");
-            }
-            Console.ResetColor();
-
-            Console.WriteLine("\nYeni bir oyun başlatmak için herhangi bir tuşa basın...");
-            Console.ReadKey();
-            CharSelect();
-        }
-
-        #endregion
-
-        #region KARAKTER STRATEJILERI (Helper Functions)
-
         // Karakter ID'sini alıp ilgili strateji fonksiyonunu döndürür
         private static StrategyFunc GetStrategyFunc(int id)
         {
@@ -346,22 +441,6 @@ namespace OyunTeorisi
                 10 => Intikamci,
                 _ => (ownHistory, oppHistory, i, a, b) => false, // Varsayılan: Sinsi
             };
-        }
-
-        // Bu sadece CharacterNames dizisini kullanmak için bir helper
-        private static int GetIndex(int selection)
-        {
-            // select1 ve select2'yi global olarak tutmadığımız için bu helper kullanılamaz. 
-            // Basitçe CharacterNames[id-1] kullanılmalı. Ancak ShowFinalResult'ta 
-            // select1 ve select2'yi almadığımız için geçici olarak 0. indeksi kullanacağım.
-            // Daha düzgün bir mimari, select1 ve select2'yi Game'den Vs'e taşımak veya global yapmak olurdu.
-            // Kullanıcının mevcut koduna sadık kalmak adına, bu fonksiyonun kullanımını basitleştiriyorum.
-            // NOT: Bu örnekte, Vs metoduna select1 ve select2'yi parametre olarak vermiştik, bu yüzden ShowFinalResult 
-            // içinden çağırmak yerine, sonucu Vs metodu içinde göstermek daha mantıklıydı.
-
-            // NOT: Vs metodu zaten select1 ve select2'yi biliyor. Skorları da biliyor. 
-            // Ben bu helper'ı siliyorum ve ShowFinalResult'ı Vs içinde kullanmak üzere düzeltiyorum.
-            return 0; // Geçici çözüm, doğru ID'yi alabilmek için Vs'e geri dönülmeli.
         }
 
         // Karakterlerin hamlelerini hesaplayan fonksiyonlar
@@ -426,9 +505,6 @@ namespace OyunTeorisi
         {
             if (i == 0) return false; // Başlangıç False (Test)
 
-            // Sömürücünün durumu için, rakibin geçmiş hamlelerine bakılarak 
-            // rakibin tepki verip vermediği anlaşılır.
-
             // Rakip hiç ihanet etmediyse (hep True), sömürmeye (False) devam et.
             bool oppAlwaysCooperated = true;
             for (int j = 0; j < i; j++)
@@ -480,7 +556,6 @@ namespace OyunTeorisi
             if (i == 0) return true; // Başlangıç True
 
             // Tüm geçmiş hamleleri (kendisi ve rakip) birleştir
-            // Bu, Linq ile kolayca yapılabilir, ancak performans için manuel yapalım
             int trueCount = 0;
             int falseCount = 0;
 
@@ -503,7 +578,6 @@ namespace OyunTeorisi
             if (i == 0) return true; // Başlangıç True
 
             // Önceki turun sonucunu belirle: Kazanma durumu (ödül)
-            // Eğer önceki hamleler sonucunda yüksek puan aldıysa (3 veya 2), bu bir ödüldür.
             bool previousOwnMove = ownHistory[i - 1];
             bool previousOppMove = oppHistory[i - 1];
 
