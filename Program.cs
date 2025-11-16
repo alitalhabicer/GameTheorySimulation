@@ -110,7 +110,7 @@ namespace OyunTeorisi
             Console.WriteLine("--- KAZANÇ MATRİSİ (PUAN TABLOSU) ---\n");
             Console.ResetColor();
 
-            Console.WriteLine("\t\t\t| Oyuncu B: İşbirliği (True)\t| Oyuncu B: İhanet (False)");
+            Console.WriteLine("\t\t\t\t| Oyuncu B: İşbirliği (True)\t| Oyuncu B: İhanet (False)");
             Console.WriteLine(new string('-', 100));
 
             Console.Write("Oyuncu A: İşbirliği (True)");
@@ -295,7 +295,7 @@ namespace OyunTeorisi
             Console.Write($"\t{totalA} ({FormatDelta(deltaA)})");
 
             // Skor B
-            Console.Write($"\t{totalB} ({FormatDelta(deltaB)})");
+            Console.Write($"\t\t{totalB} ({FormatDelta(deltaB)})");
 
             Console.WriteLine();
         }
@@ -590,7 +590,7 @@ namespace OyunTeorisi
                     ? (double)type.TotalScore / (type.Count * totalCount)
                     : 0.0;
 
-                Console.WriteLine($"{type.Id}\t{type.Name.PadRight(15)}\t{type.Count}\t{type.TotalScore}\t\t{averageScore:F2}");
+                Console.WriteLine($"{type.Id}\t{type.Name.PadRight(15)}\t\t{type.Count}\t{type.TotalScore}\t\t{averageScore:F2}");
             }
 
             if (activeTypes.Count == 1)
